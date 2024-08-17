@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhận Diện Ngôn Ngữ Ký Hiệu</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #video {
+            width: 80%;
+            height: auto;
+            border: 2px solid #4CAF50;
+            margin-bottom: 15px;
+        }
+        #startButton {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #startButton:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <button id="startButton">Bắt Đầu Nhập Ký Hiệu</button>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script>
+        let model;
+        const videoElement = document.getElementById('video');
+        const startButton = document.getElementById('startButton');
+        const confidenceThreshold = 0.5;
+        let detectedString = '';
+        let inactivityTimeout;
+
+        async function loadModel() {
+            try {
+                model = await tf.loadLayersModel('models/sign_language_model.json');
+                console.log("Mô hình đã được tải.");
+            } catch (error) {
+                console.error("Lỗi khi tải mô hình:", error);
+            }
+        }
+
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoElement.srcObject = stream;
+
+                videoElement.addEventListener('loadeddata', () => {
+                    detectSigns();
+                });
+            } catch (error) {
+                console.error("Lỗi khi truy cập camera:", error);
+            }
+        }
+
+        async function detectSigns() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+
+            async function predict() {
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                const inputTensor = tf.browser.fromPixels(canvas);
+                const predictions = await model.predict(inputTensor.expandDims(0));
+
+                handlePredictions(predictions);
+                requestAnimationFrame(predict);
+            }
+
+            predict();
+        }
+
+        function handlePredictions(predictions) {
+            const result = predictions.arraySync()[0];
+            let maxIndex = 0;
+            let maxValue = 0;
+
+            for (let i = 0; i < result.length; i++) {
+                if (result[i] > maxValue) {
+                    maxValue = result[i];
+                    maxIndex = i;
+                }
+            }
+
+            const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const detectedCharacter = characters[maxIndex];
+
+            if (maxValue > confidenceThreshold) {
+                console.log('Ký tự nhận diện:', detectedCharacter, 'Độ tin cậy:', maxValue);
+                if (!detectedString.endsWith(detectedCharacter)) {
+                    detectedString += detectedCharacter;
+                    console.log('Chuỗi hiện tại:', detectedString);
+                }
+                resetInactivityTimer();
+            }
+        }
+
+        function resetInactivityTimer() {
+            clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(() => {
+                detectedString += ' ';
+                console.log('Thêm dấu cách. Chuỗi hiện tại:', detectedString);
+            }, 3000);
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                if (detectedString.length > 0) {
+                    window.open(`https://www.google.com/search?q=${detectedString}`, "_blank");
+                    detectedString = '';
+                    console.log('Chuỗi đã tìm kiếm:', detectedString);
+                }
+            }
+        }
+
+        startButton.addEventListener('click', () => {
+            loadModel();
+            startVideo();
+        });
+
+        document.addEventListener('keydown', handleKeyPress);
+    </script>
+</body>
+</html>
